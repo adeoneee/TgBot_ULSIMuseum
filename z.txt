@@ -1,0 +1,78 @@
+from aiogram import Dispatcher
+from aiogram.types import Message, ContentType
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State
+from aiogram.fsm.state import StatesGroup
+from aiogram import filters
+
+# Определение состояний FSM
+class SubmissionForm(StatesGroup):
+    full_name = State()
+    age = State()
+    workplace = State()
+    contacts = State()
+    description = State()
+    file = State()
+async def start_command(message: Message):
+    await message.answer("Добро пожаловать! Я бот для сбора заявок. Используйте /submit для подачи заявки.")
+
+# Обработчики команд
+async def submit_command(message: Message):
+    await message.answer("Введите ваше ФИО:")
+    await SubmissionForm.full_name.set()
+
+# Сбор данных FSM
+async def process_full_name(message: Message, state: FSMContext):
+    await state.update_data(full_name=message.text)
+    await message.answer("Введите ваш возраст:")
+    await SubmissionForm.age.set()
+
+async def process_age(message: Message, state: FSMContext):
+    if not message.text.isdigit() or int(message.text) <= 0:
+        await message.answer("Пожалуйста, введите корректный возраст (число).")
+        return
+    await state.update_data(age=int(message.text))
+    await message.answer("Укажите место работы или учёбы:")
+    await SubmissionForm.workplace.set()
+
+async def process_workplace(message: Message, state: FSMContext):
+    await state.update_data(workplace=message.text)
+    await message.answer("Введите ваши контактные данные (телефон, email):")
+    await SubmissionForm.contacts.set()
+
+async def process_contacts(message: Message, state: FSMContext):
+    await state.update_data(contacts=message.text)
+    await message.answer("Кратко опишите вашу работу:")
+    await SubmissionForm.description.set()
+
+async def process_description(message: Message, state: FSMContext):
+    await state.update_data(description=message.text)
+    await message.answer("Загрузите PDF-файл с работой:")
+    await SubmissionForm.file.set()
+
+async def process_file(message: Message, state: FSMContext):
+    if message.content_type != ContentType.DOCUMENT:
+        await message.answer("Пожалуйста, загрузите файл формата PDF.")
+        return
+    file = message.document
+    file_path = f"uploads/{file.file_name}"
+    await file.download(destination_file=file_path)
+
+    # Сохраняем данные заявки в базу данных
+    data = await state.get_data()
+    data["file_path"] = file_path
+    # Здесь будет вызов функции для записи данных в БД
+
+    await message.answer("Ваша заявка успешно подана!")
+    await state.clear()  # Очистка состояний
+
+# Регистрация хендлеров
+def register_handlers(dp: Dispatcher):
+    dp.message.register(submit_command, filters.Command("submit"))
+    dp.message.register(process_full_name, filters.StateFilter(SubmissionForm.full_name))
+    dp.message.register(process_age, filters.StateFilter(SubmissionForm.age))
+    dp.message.register(process_workplace, filters.StateFilter(SubmissionForm.workplace))
+    dp.message.register(process_contacts, filters.StateFilter(SubmissionForm.contacts))
+    dp.message.register(process_description, filters.StateFilter(SubmissionForm.description))
+    dp.message.register(process_file, filters.StateFilter(SubmissionForm.file))
+    dp.message.register(start_command, filters.Command("start"))
